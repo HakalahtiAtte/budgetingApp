@@ -562,13 +562,10 @@ const SwipeRow = ({ id, openId, setOpenId, onPaid, onDelete, children }) => {
 
   const onTouchEnd = () => {
     drag.current.active = false;
-    if (offset < -SWIPE_THRESHOLD) {
-      setOffset(-SWIPE_WIDTH);
-      setOpenId(id);
-    } else {
-      setOffset(0);
-      setOpenId(null);
-    }
+    setOffset(current => {
+      if (current < -SWIPE_THRESHOLD) { setOpenId(id); return -SWIPE_WIDTH; }
+      else { setOpenId(null); return 0; }
+    });
   };
 
   const close = () => { setOffset(0); setOpenId(null); };

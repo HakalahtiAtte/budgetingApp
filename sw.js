@@ -1,4 +1,4 @@
-const CACHE = 'calmcash-v15';
+const CACHE = 'calmcash-v16';
 const ASSETS = ['./'];
 
 self.addEventListener('install', e => {
