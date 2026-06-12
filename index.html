@@ -568,9 +568,24 @@ const BillsView = ({bills, setBills, settings, toast}) => {
     toast(`"${b.name}" deleted`, {label:'Undo', fn:()=>setBills(prev=>[...prev,b])});
   };
   const togglePaid = b => {
-    const next = !b.paid;
-    setBills(bills.map(x=>x.id===b.id?{...x,paid:next}:x));
-    if(next) toast(`"${b.name}" marked as paid`, {label:'Undo', fn:()=>setBills(prev=>prev.map(x=>x.id===b.id?{...x,paid:false}:x))});
+    if (!b.paid && b.recurring !== 'once') {
+      const due = new Date(b.dueDate + 'T00:00:00');
+      const next = new Date(due);
+      if      (b.recurring === 'weekly')      next.setDate(next.getDate() + 7);
+      else if (b.recurring === 'fortnightly') next.setDate(next.getDate() + 14);
+      else if (b.recurring === 'monthly')     next.setMonth(next.getMonth() + 1);
+      else                                    next.setFullYear(next.getFullYear() + 1);
+      const nextDate = next.toISOString().split('T')[0];
+      setBills(bills.map(x => x.id === b.id ? {...x, paid:false, dueDate:nextDate} : x));
+      toast(`"${b.name}" paid — next due ${fmtDate(nextDate)}`, {
+        label: 'Undo',
+        fn: () => setBills(prev => prev.map(x => x.id === b.id ? {...x, paid:false, dueDate:b.dueDate} : x))
+      });
+    } else {
+      const next = !b.paid;
+      setBills(bills.map(x => x.id === b.id ? {...x, paid:next} : x));
+      if (next) toast(`"${b.name}" marked as paid`, {label:'Undo', fn:()=>setBills(prev=>prev.map(x=>x.id===b.id?{...x,paid:false}:x))});
+    }
   };
 
   return (
@@ -1123,7 +1138,7 @@ const ForecastView = ({income, bills, settings}) => {
 };
 
 /* ── SETTINGS MODAL ─────────────────────────────────────────────────────── */
-const SettingsModal = ({open, close, settings, onSettings, onExport, notifPerm, onRequestNotifs}) => (
+const SettingsModal = ({open, close, settings, onSettings, onExport, onExportJSON, onImportJSON, notifPerm, onRequestNotifs}) => (
   <Modal open={open} close={close} title="Settings">
     <div className="space-y-4">
       {/* Dark mode */}
@@ -1163,11 +1178,22 @@ const SettingsModal = ({open, close, settings, onSettings, onExport, notifPerm, 
             className="px-3 py-1.5 rounded-xl text-xs font-bold bg-sage-500 text-white flex-shrink-0">Enable</button>
         )}
       </div>
-      {/* Export */}
-      <button onClick={()=>{onExport(); close();}}
-        className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed border-sage-300 dark:border-sage-700 text-sage-600 dark:text-sage-400 hover:bg-sage-50 dark:hover:bg-sage-900/20 transition-colors text-sm font-semibold">
-        📊 Export Data as CSV
-      </button>
+      {/* Data */}
+      <div className="p-4 bg-gray-50 dark:bg-forest-700 rounded-2xl space-y-2">
+        <div className="font-semibold text-sm text-gray-800 dark:text-gray-200 mb-3">Data</div>
+        <button onClick={()=>{onExportJSON(); close();}}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white dark:bg-forest-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-forest-600 transition-colors text-sm font-semibold">
+          💾 Backup to JSON
+        </button>
+        <label className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white dark:bg-forest-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-forest-600 transition-colors text-sm font-semibold cursor-pointer">
+          📂 Restore from JSON
+          <input type="file" accept=".json" className="hidden" onChange={e=>{onImportJSON(e); close();}}/>
+        </label>
+        <button onClick={()=>{onExport(); close();}}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white dark:bg-forest-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-forest-600 transition-colors text-sm font-semibold">
+          📊 Export as CSV
+        </button>
+      </div>
       {/* Privacy note */}
       <div className="p-4 bg-amber-50 dark:bg-amber-900/15 rounded-2xl flex gap-3">
         <I n="info" s={16} c="text-amber-500 flex-shrink-0 mt-0.5"/>
@@ -1319,6 +1345,39 @@ const App = () => {
   },[notifPerm]);
 
   /* CSV export */
+  const exportJSON = () => {
+    const data = {version:1, exportedAt:new Date().toISOString(), income, bills, goals, settings};
+    const a = Object.assign(document.createElement('a'),{
+      href: 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2)),
+      download: `calmcash-backup-${todayStr}.json`
+    });
+    a.click();
+  };
+
+  const importJSON = e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!data.version || !Array.isArray(data.income) || !Array.isArray(data.bills) || !Array.isArray(data.goals)) {
+          toast('Invalid backup file');
+          return;
+        }
+        setIncome(data.income);
+        setBills(data.bills);
+        setGoals(data.goals);
+        if (data.settings) setSettings(data.settings);
+        toast('Data restored successfully ✓');
+      } catch {
+        toast('Could not read backup file');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const exportCSV = () => {
     const rows = [['Type','Name','Amount','Frequency','Category','Notes','Extra']];
     income.forEach(x=>rows.push(['Income',x.name,x.amount,x.frequency,'','',`Next: ${x.nextDate}`]));
@@ -1386,7 +1445,8 @@ const App = () => {
         <FAB onNav={setTab}/>
         <BottomNav active={tab} onChange={setTab}/>
         <SettingsModal open={showSett} close={()=>setShowSett(false)} settings={settings}
-          onSettings={setSettings} onExport={exportCSV} notifPerm={notifPerm} onRequestNotifs={requestNotifs}/>
+          onSettings={setSettings} onExport={exportCSV} onExportJSON={exportJSON} onImportJSON={importJSON}
+          notifPerm={notifPerm} onRequestNotifs={requestNotifs}/>
         <Toast toasts={toasts}/>
       </div>
     </div>
