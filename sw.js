@@ -1,5 +1,5 @@
-const CACHE = 'calmcash-v10';
-const ASSETS = ['/'];
+const CACHE = 'calmcash-v11';
+const ASSETS = ['./'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
