@@ -69,7 +69,7 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 /* ── UTILS ──────────────────────────────────────────────────────────────── */
 const genId = () => Math.random().toString(36).substr(2, 9);
@@ -537,6 +537,70 @@ const IncomeView = ({income, setIncome, settings, toast}) => {
   );
 };
 
+/* ── SWIPE ROW ──────────────────────────────────────────────────────────── */
+const SWIPE_WIDTH = 148;
+const SWIPE_THRESHOLD = 60;
+
+const SwipeRow = ({ id, openId, setOpenId, onPaid, onDelete, children }) => {
+  const [offset, setOffset] = useState(0);
+  const drag = useRef({startX:0, startOffset:0, active:false});
+  const isOpen = openId === id;
+
+  useEffect(() => { if (!isOpen) setOffset(0); }, [isOpen]);
+
+  const onTouchStart = e => {
+    drag.current = {startX: e.touches[0].clientX, startOffset: offset, active: true};
+  };
+
+  const onTouchMove = e => {
+    if (!drag.current.active) return;
+    const dx = e.touches[0].clientX - drag.current.startX;
+    const next = Math.max(-SWIPE_WIDTH, Math.min(0, drag.current.startOffset + dx));
+    if (Math.abs(dx) > 5) e.preventDefault();
+    setOffset(next);
+  };
+
+  const onTouchEnd = () => {
+    drag.current.active = false;
+    if (offset < -SWIPE_THRESHOLD) {
+      setOffset(-SWIPE_WIDTH);
+      setOpenId(id);
+    } else {
+      setOffset(0);
+      setOpenId(null);
+    }
+  };
+
+  const close = () => { setOffset(0); setOpenId(null); };
+
+  return (
+    <div style={{position:'relative', overflow:'hidden', borderRadius:'1rem'}}>
+      {/* Action buttons revealed on swipe */}
+      <div style={{position:'absolute',top:0,right:0,bottom:0,width:SWIPE_WIDTH,display:'flex',borderRadius:'1rem',overflow:'hidden'}}>
+        <button onClick={()=>{close(); onPaid();}}
+          style={{flex:1,background:'#22c55e',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,border:'none',cursor:'pointer'}}>
+          <I n="check" s={20} c="text-white"/>
+          <span style={{color:'#fff',fontSize:11,fontWeight:700}}>Paid</span>
+        </button>
+        <button onClick={()=>{close(); onDelete();}}
+          style={{flex:1,background:'#ef4444',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,border:'none',cursor:'pointer'}}>
+          <I n="trash" s={18} c="text-white"/>
+          <span style={{color:'#fff',fontSize:11,fontWeight:700}}>Delete</span>
+        </button>
+      </div>
+      {/* Swipeable card */}
+      <div
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onClick={isOpen ? close : undefined}
+        style={{transform:`translateX(${offset}px)`, transition: drag.current.active ? 'none' : 'transform 0.25s ease', position:'relative', zIndex:1}}>
+        {children}
+      </div>
+    </div>
+  );
+};
+
 /* ── BILLS VIEW ─────────────────────────────────────────────────────────── */
 const BillsView = ({bills, setBills, settings, toast}) => {
   const cur = settings.currency;
@@ -544,6 +608,7 @@ const BillsView = ({bills, setBills, settings, toast}) => {
   const [ed, setEd] = useState(null);
   const [catFilter, setCat] = useState('all');
   const [confirmId, setConfirmId] = useState(null);
+  const [swipeOpen, setSwipeOpen] = useState(null);
   const blank = {name:'',amount:'',dueDate:todayStr,recurring:'monthly',category:'other',notes:''};
   const [f, setF] = useState(blank);
 
@@ -629,7 +694,10 @@ const BillsView = ({bills, setBills, settings, toast}) => {
             const c = CAT[b.category]||CAT.other;
             const overdue = !b.paid && new Date(b.dueDate+'T00:00:00') < today;
             return (
-              <div key={b.id} className={`bg-white dark:bg-forest-800 rounded-2xl p-4 shadow-sm card-hover ${b.paid?'opacity-55':''}`}>
+              <SwipeRow key={b.id} id={b.id} openId={swipeOpen} setOpenId={setSwipeOpen}
+                onPaid={()=>togglePaid(b)}
+                onDelete={()=>{ setBills(prev=>prev.filter(x=>x.id!==b.id)); toast(`"${b.name}" deleted`,{label:'Undo',fn:()=>setBills(prev=>[...prev,b])}); }}>
+              <div className={`bg-white dark:bg-forest-800 rounded-2xl p-4 shadow-sm ${b.paid?'opacity-55':''}`}>
                 <div className="flex items-start gap-3">
                   <button onClick={()=>togglePaid(b)}
                     className={`mt-0.5 w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all ${b.paid?'bg-sage-500 border-sage-500':'border-gray-300 dark:border-gray-600 hover:border-sage-400'}`}>
@@ -668,6 +736,7 @@ const BillsView = ({bills, setBills, settings, toast}) => {
                   </div>
                 </div>
               </div>
+              </SwipeRow>
             );
           })}
         </div>
