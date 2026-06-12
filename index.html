@@ -69,7 +69,7 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useMemo, useRef, useCallback } = React;
+const { useState, useEffect, useMemo, useCallback } = React;
 
 /* ── UTILS ──────────────────────────────────────────────────────────────── */
 const genId = () => Math.random().toString(36).substr(2, 9);
@@ -297,7 +297,7 @@ const ProgressBar = ({pct, color, striped=false, h='h-2.5'}) => (
 const BalCard = ({balance, cur, onEdit}) => {
   const [editing, setEditing] = useState(false);
   const [tmp, setTmp] = useState('');
-  const save = () => { const v = parseFloat(tmp); if(!isNaN(v)) onEdit(v); setEditing(false); };
+  const save = () => { const v = parseFloat(tmp); if(!isNaN(v) && isFinite(v)) onEdit(v); setEditing(false); };
   return (
     <div className="relative rounded-3xl overflow-hidden" style={{background:'linear-gradient(135deg,#FF4785 0%,#C77DFF 100%)'}}>
       <div className="absolute inset-0 opacity-10 pointer-events-none"
@@ -343,7 +343,7 @@ const Dashboard = ({income, bills, goals, settings, onSettings, onNav}) => {
       .sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
   },[bills]);
   const upcoming = allUpcoming.slice(0,5);
-  const upcomingTotal = upcoming.reduce((s,b)=>s+b.amount,0);
+  const upcomingTotal = allUpcoming.reduce((s,b)=>s+b.amount,0);
   const safe = bal - upcomingTotal;
   const net  = mIncome - mBills;
 
@@ -449,8 +449,9 @@ const IncomeView = ({income, setIncome, settings, toast}) => {
   const openAdd  = () => { setEd(null); setF(blank); setOpen(true); };
   const openEdit = x  => { setEd(x); setF({name:x.name,amount:String(x.amount),frequency:x.frequency,nextDate:x.nextDate,color:x.color}); setOpen(true); };
   const save = () => {
-    if(!f.name||!f.amount) return;
-    const item = {...f, id:ed?.id||genId(), amount:parseFloat(f.amount)};
+    const amt = parseFloat(f.amount);
+    if(!f.name||!f.amount||isNaN(amt)||!isFinite(amt)||amt<=0) return;
+    const item = {...f, id:ed?.id||genId(), amount:amt};
     setIncome(ed ? income.map(x=>x.id===item.id?item:x) : [...income,item]);
     setOpen(false);
     toast(ed ? `"${item.name}" updated ✓` : `"${item.name}" added ✓`);
@@ -516,7 +517,7 @@ const IncomeView = ({income, setIncome, settings, toast}) => {
 
       <Modal open={open} close={()=>setOpen(false)} title={ed?'Edit Income':'Add Income'}>
         <div className="space-y-4">
-          <Fld label="Name" placeholder="e.g. Monthly Salary" value={f.name} onChange={e=>setF({...f,name:e.target.value})}/>
+          <Fld label="Name" placeholder="e.g. Monthly Salary" value={f.name} onChange={e=>setF({...f,name:e.target.value})} maxLength={80}/>
           <Fld label="Amount" type="number" placeholder="0.00" value={f.amount} onChange={e=>setF({...f,amount:e.target.value})}/>
           <Sel label="Frequency" value={f.frequency} onChange={e=>setF({...f,frequency:e.target.value})}>
             {Object.entries(FREQS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
@@ -554,8 +555,9 @@ const BillsView = ({bills, setBills, settings, toast}) => {
   const openAdd  = ()  => { setEd(null); setF(blank); setOpen(true); };
   const openEdit = b   => { setEd(b); setF({name:b.name,amount:String(b.amount),dueDate:b.dueDate,recurring:b.recurring,category:b.category,notes:b.notes||''}); setOpen(true); };
   const save = () => {
-    if(!f.name||!f.amount) return;
-    const item = {...f, id:ed?.id||genId(), amount:parseFloat(f.amount), paid:ed?.paid||false};
+    const amt = parseFloat(f.amount);
+    if(!f.name||!f.amount||isNaN(amt)||!isFinite(amt)||amt<=0) return;
+    const item = {...f, id:ed?.id||genId(), amount:amt, paid:ed?.paid||false};
     setBills(ed ? bills.map(b=>b.id===item.id?item:b) : [...bills,item]);
     setOpen(false);
     toast(ed ? `"${item.name}" updated ✓` : `"${item.name}" added ✓`);
@@ -658,7 +660,7 @@ const BillsView = ({bills, setBills, settings, toast}) => {
 
       <Modal open={open} close={()=>setOpen(false)} title={ed?'Edit Bill':'Add Bill'}>
         <div className="space-y-4">
-          <Fld label="Bill Name" placeholder="e.g. Netflix" value={f.name} onChange={e=>setF({...f,name:e.target.value})}/>
+          <Fld label="Bill Name" placeholder="e.g. Netflix" value={f.name} onChange={e=>setF({...f,name:e.target.value})} maxLength={80}/>
           <Fld label="Amount" type="number" placeholder="0.00" value={f.amount} onChange={e=>setF({...f,amount:e.target.value})}/>
           <div className="grid grid-cols-2 gap-3">
             <Fld label="Due Date" type="date" value={f.dueDate} onChange={e=>setF({...f,dueDate:e.target.value})}/>
@@ -681,7 +683,8 @@ const BillsView = ({bills, setBills, settings, toast}) => {
 };
 
 /* ── CALENDAR VIEW ──────────────────────────────────────────────────────── */
-const CalendarView = ({bills, income, goals}) => {
+const CalendarView = ({bills, income, goals, settings}) => {
+  const cur = settings?.currency || '€';
   const [view, setView] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [sel, setSel] = useState(null);
   const Y = view.getFullYear(), M = view.getMonth();
@@ -786,7 +789,7 @@ const CalendarView = ({bills, income, goals}) => {
                 <div className="text-[11px] text-gray-400 capitalize">{ev.type}{ev.paid?' · Paid':''}</div>
               </div>
               <div className="font-bold text-sm" style={{color:ev.color}}>
-                {ev.type==='income'?'+':''}{fmt(ev.amount,'€')}
+                {ev.type==='income'?'+':''}{fmt(ev.amount,cur)}
               </div>
             </div>
           ))}
@@ -813,8 +816,10 @@ const GoalsView = ({goals, setGoals, settings, toast}) => {
   const openAdd  = ()  => { setEd(null); setF(blank); setOpen(true); };
   const openEdit = g   => { setEd(g); setF({name:g.name,targetAmount:String(g.targetAmount),currentAmount:String(g.currentAmount),deadline:g.deadline||'',color:g.color,notes:g.notes||''}); setOpen(true); };
   const save = () => {
-    if(!f.name||!f.targetAmount) return;
-    const item = {...f, id:ed?.id||genId(), targetAmount:parseFloat(f.targetAmount), currentAmount:parseFloat(f.currentAmount)||0};
+    const target = parseFloat(f.targetAmount);
+    const current = parseFloat(f.currentAmount) || 0;
+    if(!f.name||!f.targetAmount||isNaN(target)||!isFinite(target)||target<=0) return;
+    const item = {...f, id:ed?.id||genId(), targetAmount:target, currentAmount:current};
     setGoals(ed ? goals.map(g=>g.id===item.id?item:g) : [...goals,item]);
     setOpen(false);
     toast(ed ? `"${item.name}" updated ✓` : `"${item.name}" created ✓`);
@@ -924,7 +929,7 @@ const GoalsView = ({goals, setGoals, settings, toast}) => {
 
       <Modal open={open} close={()=>setOpen(false)} title={ed?'Edit Goal':'New Savings Goal'}>
         <div className="space-y-4">
-          <Fld label="Goal Name" placeholder="e.g. Emergency Fund" value={f.name} onChange={e=>setF({...f,name:e.target.value})}/>
+          <Fld label="Goal Name" placeholder="e.g. Emergency Fund" value={f.name} onChange={e=>setF({...f,name:e.target.value})} maxLength={80}/>
           <div className="grid grid-cols-2 gap-3">
             <Fld label="Target Amount" type="number" placeholder="0.00" value={f.targetAmount} onChange={e=>setF({...f,targetAmount:e.target.value})}/>
             <Fld label="Already Saved" type="number" placeholder="0.00" value={f.currentAmount} onChange={e=>setF({...f,currentAmount:e.target.value})}/>
@@ -1248,7 +1253,7 @@ const App = () => {
   /* Demo data on first run */
   useEffect(()=>{
     if(!inited){ setIncome(DEMO_INCOME); setBills(DEMO_BILLS); setGoals(DEMO_GOALS); setInited(true); }
-  },[]);
+  },[inited]);
 
   /* Dark mode */
   useEffect(()=>{
@@ -1276,7 +1281,7 @@ const App = () => {
       return b;
     });
     if(changed) setBills(updated);
-  },[inited]);
+  },[bills]);
 
   /* Auto-advance income nextDate when it's passed */
   useEffect(()=>{
@@ -1297,7 +1302,7 @@ const App = () => {
       return {...src, nextDate: advance.toISOString().split('T')[0]};
     });
     if(changed) setIncome(updated);
-  },[inited]);
+  },[income]);
 
   /* Check bill notifications on load */
   useEffect(()=>{
@@ -1337,7 +1342,7 @@ const App = () => {
     dashboard: <Dashboard income={income} bills={bills} goals={goals} settings={settings} onSettings={setSettings} onNav={setTab}/>,
     income:    <IncomeView income={income} setIncome={setIncome} settings={settings} toast={toast}/>,
     bills:     <BillsView bills={bills} setBills={setBills} settings={settings} toast={toast}/>,
-    calendar:  <CalendarView bills={bills} income={income} goals={goals}/>,
+    calendar:  <CalendarView bills={bills} income={income} goals={goals} settings={settings}/>,
     goals:     <GoalsView goals={goals} setGoals={setGoals} settings={settings} toast={toast}/>,
     forecast:  <ForecastView income={income} bills={bills} settings={settings}/>,
   }[tab];
