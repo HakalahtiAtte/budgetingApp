@@ -1283,7 +1283,7 @@ const NAV = [
   {id:'forecast',  icon:'chart',  label:'Forecast'},
 ];
 
-const BottomNav = ({active, onChange}) => (
+const BottomNav = ({active, onChange, billBadge}) => (
   <div className="nav-container fixed bottom-0 left-0 right-0 z-40 flex justify-center pointer-events-none">
     <div className="w-full max-w-lg pointer-events-auto bg-white/92 dark:bg-forest-800/92 backdrop-blur-xl border-t border-gray-100 dark:border-forest-700 pb-safe">
       <div className="flex">
@@ -1291,8 +1291,13 @@ const BottomNav = ({active, onChange}) => (
           <button key={t.id} onClick={()=>onChange(t.id)}
             className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 transition-all relative ${active===t.id?'text-sage-600 dark:text-sage-400':'text-gray-400 dark:text-gray-500'}`}>
             {active===t.id&&<div className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-sage-500"/>}
-            <div className={`transition-transform ${active===t.id?'scale-110':''}`}>
+            <div className={`transition-transform relative ${active===t.id?'scale-110':''}`}>
               <I n={t.icon} s={20}/>
+              {t.id==='bills' && billBadge > 0 && (
+                <span className="absolute -top-1 -right-1.5 min-w-[14px] h-3.5 px-0.5 rounded-full bg-rose-500 text-white flex items-center justify-center" style={{fontSize:9,fontWeight:700,lineHeight:1}}>
+                  {billBadge > 9 ? '9+' : billBadge}
+                </span>
+              )}
             </div>
             <span className="text-[10px] font-semibold">{t.label}</span>
           </button>
@@ -1399,17 +1404,30 @@ const App = () => {
     if(changed) setIncome(updated);
   },[income]);
 
-  /* Check bill notifications on load */
+  /* App badge — unpaid bills due within 7 days */
+  useEffect(()=>{
+    if(!('setAppBadge' in navigator)) return;
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate()+7);
+    const count = bills.filter(b=>!b.paid && new Date(b.dueDate+'T00:00:00')<=cutoff).length;
+    count > 0 ? navigator.setAppBadge(count) : navigator.clearAppBadge?.();
+  },[bills]);
+
+  /* Bill notifications on open — 7-day window */
   useEffect(()=>{
     if(notifPerm!=='granted' || !bills.length) return;
-    const tom = new Date(); tom.setDate(tom.getDate()+1);
-    const tomStr = tom.toISOString().split('T')[0];
+    const now = new Date();
     bills.forEach(b=>{
       if(b.paid) return;
-      if(b.dueDate===todayStr)
-        new Notification('💸 Bill due today!',{body:`${b.name} — ${fmt(b.amount,settings.currency)}`});
-      else if(b.dueDate===tomStr)
-        new Notification('📅 Bill due tomorrow',{body:`${b.name} — ${fmt(b.amount,settings.currency)}`});
+      const due = new Date(b.dueDate+'T00:00:00');
+      const days = Math.round((due - now) / 86400000);
+      if(days < 0)
+        new Notification('⚠️ Overdue bill',{body:`${b.name} was due ${fmtDate(b.dueDate)} — ${fmt(b.amount,settings.currency)}`, tag:b.id});
+      else if(days === 0)
+        new Notification('💸 Due today',{body:`${b.name} — ${fmt(b.amount,settings.currency)}`, tag:b.id});
+      else if(days === 1)
+        new Notification('📅 Due tomorrow',{body:`${b.name} — ${fmt(b.amount,settings.currency)}`, tag:b.id});
+      else if(days <= 7)
+        new Notification(`📆 Due in ${days} days`,{body:`${b.name} — ${fmt(b.amount,settings.currency)}`, tag:b.id});
     });
   },[notifPerm]);
 
@@ -1465,6 +1483,10 @@ const App = () => {
   };
 
   const TAB_TITLES = {dashboard:'CalmCash',income:'Income',bills:'Bills & Expenses',calendar:'Calendar',goals:'Savings Goals',forecast:'Forecast'};
+  const billBadge = useMemo(()=>{
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate()+7);
+    return bills.filter(b=>!b.paid && new Date(b.dueDate+'T00:00:00')<=cutoff).length;
+  },[bills]);
 
   const page = {
     dashboard: <Dashboard income={income} bills={bills} goals={goals} settings={settings} onSettings={setSettings} onNav={setTab}/>,
@@ -1512,7 +1534,7 @@ const App = () => {
         </main>
 
         <FAB onNav={setTab}/>
-        <BottomNav active={tab} onChange={setTab}/>
+        <BottomNav active={tab} onChange={setTab} billBadge={billBadge}/>
         <SettingsModal open={showSett} close={()=>setShowSett(false)} settings={settings}
           onSettings={setSettings} onExport={exportCSV} onExportJSON={exportJSON} onImportJSON={importJSON}
           notifPerm={notifPerm} onRequestNotifs={requestNotifs}/>
